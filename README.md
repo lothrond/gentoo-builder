@@ -1,23 +1,18 @@
-# crogen
-Gentoo bootstrap environment.
+# gentoo-builder
+Build gentoo linux.
 
 # Setup
 You will need some software installed on your system:
 
-    parted gnupg
+    parted
 
 To manually install on a Debian/Ubuntu system, run:
 
-    sudo apt install gnupg parted
+    sudo apt install parted
 
 Or:
 
     sudo make deps
-
-Also, make sure to tun the following as a normal user BEFORE building,
-in order to preserve ownership of the gnupg database:
-
-    gpg -k
 
 # Information
 ...
@@ -26,10 +21,6 @@ in order to preserve ownership of the gnupg database:
 To make a default minimal gentoo system:
 
     sudo make def
-
-Then, cleanup after:
-
-    sudo make clean
 
 # Removal
 If you decide you would like to completely destroy everything:
@@ -40,3 +31,5 @@ If you are or were, currently in the middle pf a build, make sure to **FIRST** r
 
     sudo make clean
 
+(WIP)
+(Read the Makefile for more/current information)

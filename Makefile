@@ -65,6 +65,8 @@ deps:
 def: dir image def-partition def-fs def-mount stage3 portage prep-chroot enter-chroot
 
 #######################################################################################
+## Host build operations:
+#######################################################################################
 
 # Create working directory
 .PHONY: dir
@@ -127,7 +129,7 @@ portage: $(GENTOO_CHROOT)
 	cp $(GENTOO_CHROOT)/usr/share/portage/config/repos.conf \
 		$(GENTOO_CHROOT)/etc/portage/repos.conf/gentoo.conf
 
-# Prepare chroot:
+# Prepare chroot.
 .PHONY: prep-chroot
 prep-chroot: $(GENTOO_CHROOT)
 	cp --dereference /etc/resolv.conf $(GENTOO_CHROOT)/etc
@@ -140,11 +142,21 @@ prep-chroot: $(GENTOO_CHROOT)
 	mount --types tmpfs --options nosuid,nodev,noexec shm /dev/shm
 	chmod 1777 /dev/shm
 
-# Enter chroot:
+# Enter chroot.
 .PHONY: enter-chroot
 enter-chroot: $(GENTOO_CHROOT)
-	cp Make.chroot $(GENTOO_CHROOT)/Makefile
-	chroot $(GENTOO_CHROOT) /bin/bash -- make default
+	cp $(CURRDIR)/Makefile $(GENTOO_CHROOT)
+	chroot $(GENTOO_CHROOT) /bin/bash -- make default-gentoo
+
+########################################################################
+Chroot build operations:
+########################################################################
+
+.PHONY: default-gentoo
+default-gentoo:
+	:
+
+########################################################################
 
 # Cleanup after build.
 # (Useful for failed, stale builds.)

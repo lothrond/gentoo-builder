@@ -47,9 +47,9 @@ SHA512SUM_VERIFIED := \
 	$(shell cat $(GENTOO)/$(CURRENT_STAGE3).DIGESTS.asc | grep -A 1 -i sha512 | grep -v SHA | grep -v .CONTENTS | grep "stage3" | cut -d ' ' -f 1)
 STAGE3_SHA512SUM := $(shell sha512sum $(GENTOO)/$(CURRENT_STAGE3) | cut -d ' ' -f 1)
 
-########################################################################
+#######################################################################################
 ## Install dependencies:
-########################################################################
+#######################################################################################
 # (Must be done manually BEFORE build to ensure dependencies).
 
 # Debian/Ubuntu:
@@ -57,13 +57,14 @@ STAGE3_SHA512SUM := $(shell sha512sum $(GENTOO)/$(CURRENT_STAGE3) | cut -d ' ' -
 deps:
 	apt install -y parted wget tar
 
-########################################################################
-## Make default minimal system:
-########################################################################
-.PHONY: def
-def: dir image def-partition def-fs def-mount stage3 portage
 
-########################################################################
+#######################################################################################
+## Make default minimal system:
+#######################################################################################
+.PHONY: def
+def: dir image def-partition def-fs def-mount stage3 portage prep-chroot enter-chroot
+
+#######################################################################################
 
 # Create working directory
 .PHONY: dir
@@ -108,6 +109,8 @@ def-mount: $(GENTOO_IMAGE) $(DEVICE)
 stage3: $(STAGE3) $(GENTOO_CHROOT)
 	wget --https-only $(STAGE3_URL) -P /tmp
 	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3) -P $(GENTOO)
+	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).CONTENTS.gz -P $(GENTOO)	
+	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS -P $(GENTOO)
 	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS.asc -P $(GENTOO)
 	[ $(STAGE3_SHA512SUM) == $(SHA512SUM_VERIFIED) ]
 	tar -xpf $(GENTOO)/$(CURRENT_STAGE3) --xattrs-include='*.*' --numeric-owner -C $(GENTOO_CHROOT)
@@ -124,10 +127,24 @@ portage: $(GENTOO_CHROOT)
 	cp $(GENTOO_CHROOT)/usr/share/portage/config/repos.conf \
 		$(GENTOO_CHROOT)/etc/portage/repos.conf/gentoo.conf
 
-# Prepare to enter chroot:
+# Prepare chroot:
 .PHONY: prep-chroot
 prep-chroot: $(GENTOO_CHROOT)
-	:
+	cp --dereference /etc/resolv.conf $(GENTOO_CHROOT)/etc
+	mount --types proc /proc $(GENTOO_CHROOT)/proc
+	mount --rbind /sys $(GENTOO_CHROOT)/sys
+	mount --make-rslave $(GENTOO_CHROOT)/sys
+	mount --rbind /dev $(GENTOO_CHROOT)/dev
+	mount --make-rslave $(GENTOO_CHROOT)/dev
+	test -L /dev/shm && rm /dev/shm && mkdir /dev/shm
+	mount --types tmpfs --options nosuid,nodev,noexec shm /dev/shm
+	chmod 1777 /dev/shm
+
+# Enter chroot:
+.PHONY: enter-chroot
+enter-chroot: $(GENTOO_CHROOT)
+	cp Make.chroot $(GENTOO_CHROOT)/Makefile
+	chroot $(GENTOO_CHROOT) /bin/bash -- make default
 
 # Cleanup after build.
 # (Useful for failed, stale builds.)
@@ -136,14 +153,11 @@ clean:
 	losetup -d $(DEVICE)
 	umount -Rf $(GENTOO_CHROOT)
 
+########################################################################
+
 # Remove everything (start from scratch).
 .PHONY: remove
 remove: $(GENTOO)
 	rm -rfv $(GENTOO)
 
-########################################################################
-## TESTING
-.PHONY: test
-test:
-	mkfs.ext4 $(DEVICE)
 ########################################################################

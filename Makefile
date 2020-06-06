@@ -106,15 +106,15 @@ def-mount: $(GENTOO_IMAGE) $(DEVICE)
 # Get latest stage3 tarball.
 .PHONY: stage3
 stage3: $(STAGE3) $(GENTOO_CHROOT)
-	#wget --https-only $(STAGE3_URL) -P /tmp
-	#wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3) -P $(GENTOO)
-	#wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS.asc -P $(GENTOO)
+	wget --https-only $(STAGE3_URL) -P /tmp
+	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3) -P $(GENTOO)
+	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS.asc -P $(GENTOO)
 	[ $(STAGE3_SHA512SUM) == $(SHA512SUM_VERIFIED) ]
 	tar -xpf $(GENTOO)/$(CURRENT_STAGE3) --xattrs-include='*.*' --numeric-owner -C $(GENTOO_CHROOT)
 
 # Default/minimal portage configuration.
 .PHONY: portage
-portage:
+portage: $(GENTOO_CHROOT)
 	sed -i 's/COMMON_FLAGS="-O2 -pipe"/COMMON_FLAGS="-march=$(ARCH) -O2 -pipe"/g' \
 		$(GENTOO_CHROOT)/etc/portage/make.conf
 	echo "MAKEOPTS=$(MAKEOPTS)" >> $(GENTOO_CHROOT)/etc/portage/make.conf
@@ -123,6 +123,11 @@ portage:
 	mkdir -p $(GENTOO_CHROOT)/etc/portage/repos.conf
 	cp $(GENTOO_CHROOT)/usr/share/portage/config/repos.conf \
 		$(GENTOO_CHROOT)/etc/portage/repos.conf/gentoo.conf
+
+# Prepare to enter chroot:
+.PHONY: prep-chroot
+prep-chroot: $(GENTOO_CHROOT)
+	:
 
 # Cleanup after build.
 # (Useful for failed, stale builds.)

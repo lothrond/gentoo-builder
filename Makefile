@@ -1,4 +1,3 @@
-
 ########################################################################
 SHELL := /bin/bash
 CURRDIR := $(shell pwd)
@@ -16,6 +15,12 @@ GENTOO_SIZE ?= 8
 # Portage options:
 MAKEOPTS ?= "-j 2"
 ARCH ?= native
+
+# OpenRC options:
+TIMEZONE ?= America/New_York
+
+# Desktop profiles
+PROFILE_CORE := default/linux/amd64/17.1
 
 # Mirrors
 M0 ?= https://gentoo.osuosl.org/
@@ -57,12 +62,11 @@ STAGE3_SHA512SUM := $(shell sha512sum $(GENTOO)/$(CURRENT_STAGE3) | cut -d ' ' -
 deps:
 	apt install -y parted wget tar
 
-
 #######################################################################################
 ## Make default minimal system:
 #######################################################################################
 .PHONY: def
-def: dir image def-partition def-fs def-mount stage3 portage prep-chroot enter-chroot
+def: dir image def-partition def-fs def-mount stage3 portage kernelfs def-chroot
 
 #######################################################################################
 ## Host build operations:
@@ -76,7 +80,7 @@ dir:
 # Create virtual block device image.
 .PHONY: image
 image: $(GENTOO)
-	#dd bs=$(BS) if=/dev/zero of=$(GENTOO_IMAGE) count=$(COUNT) status=progress
+	dd bs=$(BS) if=/dev/zero of=$(GENTOO_IMAGE) count=$(COUNT) status=progress
 	losetup -fP $(GENTOO_IMAGE)
 	mkfs.ext4 $(DEVICE)
 
@@ -129,9 +133,9 @@ portage: $(GENTOO_CHROOT)
 	cp $(GENTOO_CHROOT)/usr/share/portage/config/repos.conf \
 		$(GENTOO_CHROOT)/etc/portage/repos.conf/gentoo.conf
 
-# Prepare chroot.
-.PHONY: prep-chroot
-prep-chroot: $(GENTOO_CHROOT)
+# Prepare kernel fs for chroot.
+.PHONY: kernelfs
+kernelfs: $(GENTOO_CHROOT)
 	cp --dereference /etc/resolv.conf $(GENTOO_CHROOT)/etc
 	mount --types proc /proc $(GENTOO_CHROOT)/proc
 	mount --rbind /sys $(GENTOO_CHROOT)/sys
@@ -142,30 +146,50 @@ prep-chroot: $(GENTOO_CHROOT)
 	mount --types tmpfs --options nosuid,nodev,noexec shm /dev/shm
 	chmod 1777 /dev/shm
 
-# Enter chroot.
-.PHONY: enter-chroot
-enter-chroot: $(GENTOO_CHROOT)
-	cp $(CURRDIR)/Makefile $(GENTOO_CHROOT)
-	chroot $(GENTOO_CHROOT) /bin/bash -- make default-gentoo
-
 ########################################################################
-Chroot build operations:
+# Chroot build operations:
 ########################################################################
 
-.PHONY: default-gentoo
-default-gentoo:
-	:
+.PHONY: check-chroot-makefile:
+check-chroot-makefile: $(GENTOO_CHROOT)
+	-[ $(GENTOO_CHROOT)/Makefile ] || cp $(CURRDIR)/Makefile $(GENTOO_CHROOT)
+
+.PHONY: def-chroot:
+def-profile: $(GENTOO_CHROOT) check-chroot-makefile
+	chroot $(GENTOO_CHROOT) /bin/bash -- make def-profile
+	
+.PHONY: def-profile:
+def-profile:
+	$(shell source /etc/profile) \
+		mount $(DEVICE)p1 /boot \
+		emerge-webrsync \
+		eselect profile set $(PROFILE_CORE) \
+		emerge --ask --verbose --update --deep --newuse @world \
+		echo "$(TIMEZONE)" > /etc/timezone \
+		emerge --config sys-libs/timezone-data \
+		sed -i 's/#en_US\ ISO-8859-1/en_US\ ISO-8859-1/g' /etc/locale.gen \
+		sed -i 's/en_US.UTF-8\ UTF-8/en_US.UTF-8\ UTF-8/g' /etc/locale.gen \
+		locale-gen
 
 ########################################################################
+## Other useful operations:
+########################################################################
+
+# Enter chroot
+# (Just enter the gentoo chroot without building, if exisis)
+.PHONY: enter_def
+enter: $(GENTOO_CHROOT) $(DEVICE)
+	losetup -fP $(DEVICE)
+	mount $(DEVICE)p3 $(GENTOO_CHROOT)
+	mount $(DEVICE)p2 $(GENTOO_CHROOT)/boot
+	chroot $(GENTOO_CHROOT)/bin/bash
 
 # Cleanup after build.
-# (Useful for failed, stale builds.)
+# (Useful for failed or infinished builds.)
 .PHONY: clean
 clean:
 	losetup -d $(DEVICE)
 	umount -Rf $(GENTOO_CHROOT)
-
-########################################################################
 
 # Remove everything (start from scratch).
 .PHONY: remove

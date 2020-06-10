@@ -150,15 +150,15 @@ kernelfs: $(GENTOO_CHROOT)
 # Chroot build operations:
 ########################################################################
 
-.PHONY: check-chroot-makefile:
+.PHONY: check-chroot-makefile
 check-chroot-makefile: $(GENTOO_CHROOT)
 	-[ $(GENTOO_CHROOT)/Makefile ] || cp $(CURRDIR)/Makefile $(GENTOO_CHROOT)
 
-.PHONY: def-chroot:
+.PHONY: def-chroot
 def-profile: $(GENTOO_CHROOT) check-chroot-makefile
 	chroot $(GENTOO_CHROOT) /bin/bash -- make def-profile
 	
-.PHONY: def-profile:
+.PHONY: def-profile
 def-profile:
 	$(shell source /etc/profile) \
 		mount $(DEVICE)p1 /boot \

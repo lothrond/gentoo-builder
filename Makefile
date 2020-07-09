@@ -6,8 +6,9 @@ CURRDIR := $(shell pwd)
 ########################################################################
 
 GENTOO ?= $(CURRDIR)/gentoo
-GENTOO_CHROOT ?= $(GENTOO)/chroot
-GENTOO_IMAGE ?= $(GENTOO)/gentoo.img
+
+GENTOO_CHROOT := $(GENTOO)/chroot
+GENTOO_IMAGE := $(GENTOO)/gentoo.img
 
 # Define size (in GB) of virtual block device image:
 GENTOO_SIZE ?= 8
@@ -33,28 +34,7 @@ M4 ?= https://mirror.sjc02.svwh.net/gentoo/
 ## END GENTOO DEFAULT ENVIRONMENT.
 ########################################################################
 
-# Virtual block device image size:
-BS := 1024
-COUNT := $(shell echo $$(( $(BS) * $(GENTOO_SIZE) * $(BS) )))
-
-# Virtual block device image:
-DEVICE := $(shell losetup -j $(GENTOO_IMAGE) | cut -d ':' -f 1)
-
-# Check if virtutal block device image is ready:
-DEVICE_READY := $(shell losetup -j $(GENTOO_IMAGE) | wc -l)
-
-# Gentoo stage3 tarball:
-STAGE3_URL := https://mirrors.kernel.org/gentoo/releases/amd64/autobuilds/current-stage3-amd64/
-CURRENT_STAGE3 := $(shell cat /tmp/index.html | grep stage3- | grep amd64 | grep .tar | cut -d '"' -f 2 | head -n 1)
-
-# Verify stage3 tarball sha512sum.
-SHA512SUM_VERIFIED := \
-	$(shell cat $(GENTOO)/$(CURRENT_STAGE3).DIGESTS.asc | grep -A 1 -i sha512 | grep -v SHA | grep -v .CONTENTS | grep "stage3" | cut -d ' ' -f 1)
-STAGE3_SHA512SUM := $(shell sha512sum $(GENTOO)/$(CURRENT_STAGE3) | cut -d ' ' -f 1)
-
-#######################################################################################
 ## Install dependencies:
-#######################################################################################
 # (Must be done manually BEFORE build to ensure dependencies).
 
 # Debian/Ubuntu:
@@ -63,30 +43,28 @@ deps:
 	apt install -y parted wget tar
 
 #######################################################################################
-## Make default minimal system:
+## Host build chroot setup operations:
 #######################################################################################
-.PHONY: def
-def: dir image def-partition def-fs def-mount stage3 portage kernelfs def-chroot
-
-#######################################################################################
-## Host build operations:
-#######################################################################################
-
-# Create working directory
-.PHONY: dir
-dir:
+.PHONY: chroot
+chroot:
 	-[ -d  $(GENTOO) ] || mkdir -pv $(GENTOO)
 
-# Create virtual block device image.
-.PHONY: image
-image: $(GENTOO)
+	# Virtual block device image size:
+	BS := 1024
+	COUNT := $(shell echo $$(( $(BS) * $(GENTOO_SIZE) * $(BS) )))
+
+	# Create virtual block device image.
 	dd bs=$(BS) if=/dev/zero of=$(GENTOO_IMAGE) count=$(COUNT) status=progress
 	losetup -fP $(GENTOO_IMAGE)
+
+	DEVICE := $(shell losetup -j $(GENTOO_IMAGE) | cut -d ':' -f 1)
+
 	mkfs.ext4 $(DEVICE)
 
-# Default/minimal partition.
-.PHONY: def-partition
-def-partition: $(GENTOO_IMAGE) $(DEVICE)
+	# Check if virtutal block device image is ready:
+	DEVICE_READY := $(shell losetup -j $(GENTOO_IMAGE) | wc -l)
+
+	# Default/minimal partition.
 	[ $(DEVICE_READY) -eq 1 ]
 	wipefs -af $(DEVICE)
 	parted -a optimal $(DEVICE) -- mklabel msdos \
@@ -96,34 +74,37 @@ def-partition: $(GENTOO_IMAGE) $(DEVICE)
 		mkpart primary ext4 802 -1s \
 		print
 
-# Default/minimal filesystems.
-.PHONY: def-fs
-def-fs: $(GENTOO_IMAGE) $(DEVICE)
+	# Default/minimal filesystems.
 	[ $(DEVICE_READY) -eq 1 ]
 	mkfs.ext2 $(DEVICE)p1
 	mkswap $(DEVICE)p2
 	mkfs.ext4 $(DEVICE)p3
 
-# Mount default/minimal filesystems.
-.PHONY: def-mount
-def-mount: $(GENTOO_IMAGE) $(DEVICE)
+	# Mount default/minimal filesystems.
 	-[ -d $(GENTOO_CHROOT) ] || mkdir -pv $(GENTOO_CHROOT)
 	mount $(DEVICE)p3 $(GENTOO_CHROOT)
 
-# Get latest stage3 tarball.
-.PHONY: stage3
-stage3: $(STAGE3) $(GENTOO_CHROOT)
+	# Get latest stage3 tarball.
 	wget --https-only $(STAGE3_URL) -P /tmp
 	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3) -P $(GENTOO)
 	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).CONTENTS.gz -P $(GENTOO)	
 	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS -P $(GENTOO)
 	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS.asc -P $(GENTOO)
+
+	# Gentoo stage3 tarball:
+	STAGE3_URL := https://mirrors.kernel.org/gentoo/releases/amd64/autobuilds/current-stage3-amd64/
+	CURRENT_STAGE3 := $(shell cat /tmp/index.html | grep stage3- | grep amd64 | grep .tar | cut -d '"' -f 2 | head -n 1)
+
+	# Verify stage3 tarball sha512sum.
+	SHA512SUM_VERIFIED := \
+	  $(shell cat $(GENTOO)/$(CURRENT_STAGE3).DIGESTS.asc | grep -A 1 -i sha512 | grep -v SHA | grep -v .CONTENTS | grep "stage3" | cut -d ' ' -f 1)
+	STAGE3_SHA512SUM := $(shell sha512sum $(GENTOO)/$(CURRENT_STAGE3) | cut -d ' ' -f 1)
+
 	[ $(STAGE3_SHA512SUM) == $(SHA512SUM_VERIFIED) ]
+
 	tar -xpf $(GENTOO)/$(CURRENT_STAGE3) --xattrs-include='*.*' --numeric-owner -C $(GENTOO_CHROOT)
 
-# Default/minimal portage configuration.
-.PHONY: portage
-portage: $(GENTOO_CHROOT)
+	# Default/minimal portage configuration.
 	sed -i 's/COMMON_FLAGS="-O2 -pipe"/COMMON_FLAGS="-march=$(ARCH) -O2 -pipe"/g' \
 		$(GENTOO_CHROOT)/etc/portage/make.conf
 	echo "MAKEOPTS=$(MAKEOPTS)" >> $(GENTOO_CHROOT)/etc/portage/make.conf
@@ -133,9 +114,7 @@ portage: $(GENTOO_CHROOT)
 	cp $(GENTOO_CHROOT)/usr/share/portage/config/repos.conf \
 		$(GENTOO_CHROOT)/etc/portage/repos.conf/gentoo.conf
 
-# Prepare kernel fs for chroot.
-.PHONY: kernelfs
-kernelfs: $(GENTOO_CHROOT)
+	# Prepare kernel fs for chroot.
 	cp --dereference /etc/resolv.conf $(GENTOO_CHROOT)/etc
 	mount --types proc /proc $(GENTOO_CHROOT)/proc
 	mount --rbind /sys $(GENTOO_CHROOT)/sys
@@ -149,17 +128,10 @@ kernelfs: $(GENTOO_CHROOT)
 ########################################################################
 # Chroot build operations:
 ########################################################################
-
-.PHONY: check-chroot-makefile
-check-chroot-makefile: $(GENTOO_CHROOT)
+.PHONY: gentoo
+gentoo: $(GENTOO_CHROOT)
 	-[ $(GENTOO_CHROOT)/Makefile ] || cp $(CURRDIR)/Makefile $(GENTOO_CHROOT)
-
-.PHONY: def-chroot
-def-profile: $(GENTOO_CHROOT) check-chroot-makefile
 	chroot $(GENTOO_CHROOT) /bin/bash -- make def-profile
-	
-.PHONY: def-profile
-def-profile:
 	$(shell source /etc/profile) \
 		mount $(DEVICE)p1 /boot \
 		emerge-webrsync \
@@ -177,14 +149,14 @@ def-profile:
 
 # Enter chroot
 # (Just enter the gentoo chroot without building, if exisis)
-.PHONY: enter_def
+.PHONY: enter_chroot
 enter: $(GENTOO_CHROOT) $(DEVICE)
 	losetup -fP $(DEVICE)
 	mount $(DEVICE)p3 $(GENTOO_CHROOT)
 	mount $(DEVICE)p2 $(GENTOO_CHROOT)/boot
 	chroot $(GENTOO_CHROOT)/bin/bash
 
-# Cleanup after build.
+# Cleanup build.
 # (Useful for failed or infinished builds.)
 .PHONY: clean
 clean:

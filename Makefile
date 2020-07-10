@@ -14,7 +14,7 @@ MAKEOPTS ?= "-j 2"
 
 ## Install dependencies:
 # (Must be done manually BEFORE build to ensure dependencies).
-DEPS:= parted wget tar
+DEPS:= parted wget tar dosfstools
 
 # Debian/Ubuntu:
 .PHONY: install-deps-deb
@@ -26,7 +26,7 @@ install-deps-deb:
 #######################################################################################
 
 GENTOO ?= /mnt/gentoo
-GENTOO_IMAGE := /tmp/gentoo.img
+GENTOO_IMAGE ?= /tmp/gentoo.img
 
 # Define size (in GB) of virtual block device image:
 GENTOO_SIZE ?= 8
@@ -48,7 +48,7 @@ M4 ?= https://mirror.sjc02.svwh.net/gentoo/
 #############################################################################################################
 #############################################################################################################
 
-chroot: block_device uefi_partition uefi_fs uefi_mount stage3
+chroot: block_device uefi_partition uefi_fs uefi_mount stage3 portage kernelfs
 
 #############################################################################################################
 
@@ -93,55 +93,53 @@ mbr_fs: $(GENTOO_IMAGE)
 	mkfs.ext2 $(DEVICE)p1
 	mkswap $(DEVICE)p2
 	mkfs.ext4 $(DEVICE)p3
-	
+
 .PHONY: uefi_mount
 uefi_mount: $(GENTOO_IMAGE)
 	-[ $(DEVICE) ] || losetup -fP $(GENTOO_IMAGE)
 	-[ -d $(GENTOO) ] || mkdir -pv $(GENTOO)
 	mount $(DEVICE)p2 $(GENTOO)
 
+STAGE3_URL := https://mirrors.kernel.org/gentoo/releases/amd64/autobuilds/current-stage3-amd64
+CURRENT_STAGE3 := $$(cat /tmp/current-stage3-amd64 | grep stage3- | grep amd64 | grep .tar | cut -d '"' -f 2 | head -n 1)
+SHA512SUM_VERIFIED := \
+	$$(cat $(GENTOO)/$(CURRENT_STAGE3).DIGESTS.asc | grep -A 1 -i sha512 | grep -v SHA | grep -v .CONTENTS | grep "stage3" | cut -d ' ' -f 1)
+STAGE3_SHA512SUM := $$(sha512sum $(GENTOO)/$(CURRENT_STAGE3) | cut -d ' ' -f 1)
+
 # Gentoo stage3 tarball:
 stage3:
-	STAGE3_URL := https://mirrors.kernel.org/gentoo/releases/amd64/autobuilds/current-stage3-amd64/
 	# Get latest stage3 tarball.
 	wget --https-only $(STAGE3_URL) -P /tmp
-	CURRENT_STAGE3 := $(shell cat /tmp/index.html | grep stage3- | grep amd64 | grep .tar | cut -d '"' -f 2 | head -n 1)
 	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3) -P $(GENTOO)
-	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).CONTENTS.gz -P $(GENTOO)	
+	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).CONTENTS.gz -P $(GENTOO)
 	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS -P $(GENTOO)
 	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS.asc -P $(GENTOO)
 	# Verify stage3 tarball sha512sum.
-	SHA512SUM_VERIFIED := \
-		$(shell cat $(GENTOO)/$(CURRENT_STAGE3).DIGESTS.asc | grep -A 1 -i sha512 | grep -v SHA | grep -v .CONTENTS | grep "stage3" | cut -d ' ' -f 1)
-	STAGE3_SHA512SUM := $(shell sha512sum $(GENTOO)/$(CURRENT_STAGE3) | cut -d ' ' -f 1)
-	[ $(STAGE3_SHA512SUM) == $(SHA512SUM_VERIFIED) ]
+	[ $(STAGE3_SHA512SUM) == $(SHA512SUM_VERIFIED) ] && \
+		tar -xpf $(GENTOO)/$(CURRENT_STAGE3) --xattrs-include='*.*' --numeric-owner -C $(GENTOO)
+	mv stage3-* $(GENTOO)/root
 
-.PHONY: extract-stage3
-extract-stage3: $(CURRENT_STAGE3)
-	tar -xpf $(GENTOO)/$(CURRENT_STAGE3) --xattrs-include='*.*' --numeric-owner -C $(GENTOO_CHROOT)
-
-#############################################################################################################
-#############################################################################################################
-
-.PHONY: other
-other:
+.PHONY: portage
+portage: $(GENTOO_IMAGE)
 	# Default/minimal portage configuration.
 	sed -i 's/COMMON_FLAGS="-O2 -pipe"/COMMON_FLAGS="-march=$(ARCH) -O2 -pipe"/g' \
-		$(GENTOO_CHROOT)/etc/portage/make.conf
-	echo "MAKEOPTS=$(MAKEOPTS)" >> $(GENTOO_CHROOT)/etc/portage/make.conf
+		$(GENTOO)/etc/portage/make.conf
+	echo "MAKEOPTS=$(MAKEOPTS)" >> $(GENTOO)/etc/portage/make.conf
 	echo GENTOO_MIRRORS="\"$(M0) $(M1) $(M2) $(M3) $(M4)\"" >> \
-		$(GENTOO_CHROOT)/etc/portage/make.conf
-	mkdir -p $(GENTOO_CHROOT)/etc/portage/repos.conf
-	cp $(GENTOO_CHROOT)/usr/share/portage/config/repos.conf \
-		$(GENTOO_CHROOT)/etc/portage/repos.conf/gentoo.conf
+		$(GENTOO)/etc/portage/make.conf
+	mkdir -p $(GENTOO)/etc/portage/repos.conf
+	cp $(GENTOO)/usr/share/portage/config/repos.conf \
+		$(GENTOO)/etc/portage/repos.conf/gentoo.conf
 
+.PHONY: kernelfs
+kernelfs: $(GENTOO_IMAGE)
 	# Prepare kernel fs for chroot.
-	cp --dereference /etc/resolv.conf $(GENTOO_CHROOT)/etc
-	mount --types proc /proc $(GENTOO_CHROOT)/proc
-	mount --rbind /sys $(GENTOO_CHROOT)/sys
-	mount --make-rslave $(GENTOO_CHROOT)/sys
-	mount --rbind /dev $(GENTOO_CHROOT)/dev
-	mount --make-rslave $(GENTOO_CHROOT)/dev
+	cp --dereference /etc/resolv.conf $(GENTOO)/etc
+	mount --types proc /proc $(GENTOO)/proc
+	mount --rbind /sys $(GENTOO)/sys
+	mount --make-rslave $(GENTOO)/sys
+	mount --rbind /dev $(GENTOO)/dev
+	mount --make-rslave $(GENTOO)/dev
 	test -L /dev/shm && rm /dev/shm && mkdir /dev/shm
 	mount --types tmpfs --options nosuid,nodev,noexec shm /dev/shm
 	chmod 1777 /dev/shm
@@ -150,8 +148,8 @@ other:
 # Chroot build operations:
 ########################################################################
 .PHONY: gentoo
-gentoo: $(GENTOO_CHROOT)
-	-[ $(GENTOO_CHROOT)/Makefile ] || cp $(CURRDIR)/Makefile $(GENTOO_CHROOT)
+gentoo: $(GENTOO_IMAGE)
+	-[ $(GENTOO)/Makefile ] || cp $(CURRDIR)/Makefile $(GENTOO)
 	chroot $(GENTOO_CHROOT) /bin/bash -- make def-profile
 	$(shell source /etc/profile) \
 		mount $(DEVICE)p1 /boot \

@@ -109,15 +109,19 @@ STAGE3_SHA512SUM := $$(sha512sum $(GENTOO)/$(CURRENT_STAGE3) | cut -d ' ' -f 1)
 # Gentoo stage3 tarball:
 stage3:
 	# Get latest stage3 tarball.
-	wget --https-only $(STAGE3_URL) -P /tmp
-	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3) -P $(GENTOO)
-	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).CONTENTS.gz -P $(GENTOO)
-	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS -P $(GENTOO)
-	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS.asc -P $(GENTOO)
-	# Verify stage3 tarball sha512sum.
-	[ $(STAGE3_SHA512SUM) == $(SHA512SUM_VERIFIED) ] && \
-		tar -xpf $(GENTOO)/$(CURRENT_STAGE3) --xattrs-include='*.*' --numeric-owner -C $(GENTOO)
-	mv stage3-* $(GENTOO)/root
+	#wget --https-only $(STAGE3_URL) -P /tmp
+	#wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3) -P $(GENTOO)
+	#wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).CONTENTS.gz -P $(GENTOO)
+	#wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS -P $(GENTOO)
+	#wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS.asc -P $(GENTOO)
+	# Verify stage3 sha512sum.
+	#[ $(STAGE3_SHA512SUM) == $(SHA512SUM_VERIFIED) ] && \
+		#tar -xpvf $(GENTOO)/$(CURRENT_STAGE3) --xattrs-include='*.*' --numeric-owner -C $(GENTOO)
+	# Cleanup/store stage3
+	mv -v $(GENTOO)/$(CURRENT_STAGE3) $(GENTOO)/root
+	mv -v $(GENTOO)/$(CURRENT_STAGE3).CONTENTS.gz $(GENTOO)/root
+	mv -v $(GENTOO)/$(CURRENT_STAGE3).DIGESTS $(GENTOO)/root
+	mv -v $(GENTOO)/$(CURRENT_STAGE3).DIGESTS.asc $(GENTOO)/root
 
 .PHONY: portage
 portage: $(GENTOO_IMAGE)
@@ -173,6 +177,6 @@ clean:
 	umount -R $(GENTOO) | losetup -d $(DEVICE)
 	rm $(GENTOO_IMAGE)
 	rmdir $(GENTOO)
-	[ -f /tmp/index.html ] && rm /tmp/index.html
-	
+	[ -f /tmp/current-stage3-amd64 ] && rm /tmp/current-stage3-amd64
+
 ########################################################################

@@ -1,3 +1,4 @@
 gentoo/*
 stage3*
 *.img
+/Makefile~

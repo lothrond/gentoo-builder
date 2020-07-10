@@ -5,17 +5,33 @@ CURRDIR := $(shell pwd)
 ## BEGIN GENTOO DEFAULT ENVIRONMENT:
 ########################################################################
 
-GENTOO ?= $(CURRDIR)/gentoo
+GENTOO ?= /tmp/gentoo
+ARCH ?= native
+MAKEOPTS ?= "-j 2"
 
-GENTOO_CHROOT := $(GENTOO)/chroot
-GENTOO_IMAGE := $(GENTOO)/gentoo.img
+########################################################################
+## END GENTOO DEFAULT ENVIRONMENT.
+########################################################################
+
+## Install dependencies:
+# (Must be done manually BEFORE build to ensure dependencies).
+DEPS:= parted wget tar
+
+# Debian/Ubuntu:
+.PHONY: install-deps-deb
+install-deps-deb:
+	apt install -y $(DEPS)
+
+#######################################################################################
+## Host build chroot setup operations:
+#######################################################################################
+
+GENTOO_CHROOT := $(GENTOO)
+GENTOO_IMAGE := /tmp/gentoo.img
 
 # Define size (in GB) of virtual block device image:
 GENTOO_SIZE ?= 8
-
-# Portage options:
-MAKEOPTS ?= "-j 2"
-ARCH ?= native
+BS := 1024
 
 # OpenRC options:
 TIMEZONE ?= America/New_York
@@ -30,42 +46,41 @@ M2 ?= https://gentoo.ussg.indiana.edu/
 M3 ?= https://mirrors.rit.edu/gentoo/
 M4 ?= https://mirror.sjc02.svwh.net/gentoo/
 
-########################################################################
-## END GENTOO DEFAULT ENVIRONMENT.
-########################################################################
+#############################################################################################################
+#############################################################################################################
 
-## Install dependencies:
-# (Must be done manually BEFORE build to ensure dependencies).
+chroot: block_device uefi_partition uefi_fs
 
-# Debian/Ubuntu:
-.PHONY: deps
-deps:
-	apt install -y parted wget tar
+#############################################################################################################
 
-#######################################################################################
-## Host build chroot setup operations:
-#######################################################################################
-.PHONY: chroot
-chroot:
-	-[ -d  $(GENTOO) ] || mkdir -pv $(GENTOO)
+DEVICE := $$(losetup -j $(GENTOO_IMAGE) | cut -d ':' -f 1)
+COUNT := $$(( $(BS) * $(GENTOO_SIZE) * $(BS) ))
 
-	# Virtual block device image size:
-	BS := 1024
-	COUNT := $(shell echo $$(( $(BS) * $(GENTOO_SIZE) * $(BS) )))
-
-	# Create virtual block device image.
+block_device:
 	dd bs=$(BS) if=/dev/zero of=$(GENTOO_IMAGE) count=$(COUNT) status=progress
 	losetup -fP $(GENTOO_IMAGE)
+	mkfs.ext4 "$(DEVICE)"
+	losetup -d $(DEVICE)
 
-	DEVICE := $(shell losetup -j $(GENTOO_IMAGE) | cut -d ':' -f 1)
+.PHONY: uefi_partition
+uefi_partition: $(GENTOO_IMAGE)
+	-[ $(DEVICE) ] || losetup -fP $(GENTOO_IMAGE)
+	wipefs -af $(DEVICE)
+	parted -a optimal $(DEVICE) -- mklabel gpt \
+		unit mib \
+		mkpart "efi" fat32 1 261 \
+		set 1 esp on \
+		mkpart "rootfs" ext4 261 100% \
+		print
 
-	mkfs.ext4 $(DEVICE)
+.PHONY: uefi_fs
+uefi_fs: $(GENTOO_IMAGE)
+	-[ $(DEVICE) ] || losetup -fP $(GENTOO_IMAGE)
+	mkfs.fat -F32 $(DEVICE)p1
+	mkfs.ext4 $(DEVICE)p2
 
-	# Check if virtutal block device image is ready:
-	DEVICE_READY := $(shell losetup -j $(GENTOO_IMAGE) | wc -l)
-
-	# Default/minimal partition.
-	[ $(DEVICE_READY) -eq 1 ]
+.PHONY: mbr_partition
+default_partition_mbr: $(GENTOO_IMAGE)
 	wipefs -af $(DEVICE)
 	parted -a optimal $(DEVICE) -- mklabel msdos \
 		mkpart primary ext2 2 202 \
@@ -74,12 +89,25 @@ chroot:
 		mkpart primary ext4 802 -1s \
 		print
 
-	# Default/minimal filesystems.
-	[ $(DEVICE_READY) -eq 1 ]
+.PHONY: mbr_fs
+mbr_fs: $(GENTOO_IMAGE)
+	-[ $(DEVICE) ] || losetup -fP $(GENTOO_IMAGE)
 	mkfs.ext2 $(DEVICE)p1
 	mkswap $(DEVICE)p2
 	mkfs.ext4 $(DEVICE)p3
+	
+.PHONY: uefi_mount
+uefi_mount: $(GENTOO_IMAGE)
+	-[ $(DEVICE) ] || losetup -fP $(GENTOO_IMAGE)
+	-[ -d $(GENTOO) ] || mkdir -pv $(GENTOO)
+	mount $(DEVICE)p2 $(GENTOO)
 
+
+#############################################################################################################
+#############################################################################################################
+
+.PHONY: other
+other:
 	# Mount default/minimal filesystems.
 	-[ -d $(GENTOO_CHROOT) ] || mkdir -pv $(GENTOO_CHROOT)
 	mount $(DEVICE)p3 $(GENTOO_CHROOT)
@@ -147,25 +175,11 @@ gentoo: $(GENTOO_CHROOT)
 ## Other useful operations:
 ########################################################################
 
-# Enter chroot
-# (Just enter the gentoo chroot without building, if exisis)
-.PHONY: enter_chroot
-enter: $(GENTOO_CHROOT) $(DEVICE)
-	losetup -fP $(DEVICE)
-	mount $(DEVICE)p3 $(GENTOO_CHROOT)
-	mount $(DEVICE)p2 $(GENTOO_CHROOT)/boot
-	chroot $(GENTOO_CHROOT)/bin/bash
-
 # Cleanup build.
 # (Useful for failed or infinished builds.)
 .PHONY: clean
 clean:
 	losetup -d $(DEVICE)
-	umount -Rf $(GENTOO_CHROOT)
-
-# Remove everything (start from scratch).
-.PHONY: remove
-remove: $(GENTOO)
-	rm -rfv $(GENTOO)
+	rm $(GENTOO_IMAGE)
 
 ########################################################################

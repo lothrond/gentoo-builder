@@ -5,7 +5,6 @@ CURRDIR := $(shell pwd)
 ## BEGIN GENTOO DEFAULT ENVIRONMENT:
 ########################################################################
 
-GENTOO ?= /tmp/gentoo
 ARCH ?= native
 MAKEOPTS ?= "-j 2"
 
@@ -26,7 +25,7 @@ install-deps-deb:
 ## Host build chroot setup operations:
 #######################################################################################
 
-GENTOO_CHROOT := $(GENTOO)
+GENTOO ?= /mnt/gentoo
 GENTOO_IMAGE := /tmp/gentoo.img
 
 # Define size (in GB) of virtual block device image:
@@ -49,7 +48,7 @@ M4 ?= https://mirror.sjc02.svwh.net/gentoo/
 #############################################################################################################
 #############################################################################################################
 
-chroot: block_device uefi_partition uefi_fs
+chroot: block_device uefi_partition uefi_fs uefi_mount stage3
 
 #############################################################################################################
 
@@ -60,11 +59,10 @@ block_device:
 	dd bs=$(BS) if=/dev/zero of=$(GENTOO_IMAGE) count=$(COUNT) status=progress
 	losetup -fP $(GENTOO_IMAGE)
 	mkfs.ext4 "$(DEVICE)"
-	losetup -d $(DEVICE)
 
 .PHONY: uefi_partition
 uefi_partition: $(GENTOO_IMAGE)
-	-[ $(DEVICE) ] || losetup -fP $(GENTOO_IMAGE)
+	[ $(DEVICE) ] || losetup -fP $(GENTOO_IMAGE)
 	wipefs -af $(DEVICE)
 	parted -a optimal $(DEVICE) -- mklabel gpt \
 		unit mib \
@@ -102,36 +100,31 @@ uefi_mount: $(GENTOO_IMAGE)
 	-[ -d $(GENTOO) ] || mkdir -pv $(GENTOO)
 	mount $(DEVICE)p2 $(GENTOO)
 
+# Gentoo stage3 tarball:
+stage3:
+	STAGE3_URL := https://mirrors.kernel.org/gentoo/releases/amd64/autobuilds/current-stage3-amd64/
+	# Get latest stage3 tarball.
+	wget --https-only $(STAGE3_URL) -P /tmp
+	CURRENT_STAGE3 := $(shell cat /tmp/index.html | grep stage3- | grep amd64 | grep .tar | cut -d '"' -f 2 | head -n 1)
+	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3) -P $(GENTOO)
+	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).CONTENTS.gz -P $(GENTOO)	
+	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS -P $(GENTOO)
+	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS.asc -P $(GENTOO)
+	# Verify stage3 tarball sha512sum.
+	SHA512SUM_VERIFIED := \
+		$(shell cat $(GENTOO)/$(CURRENT_STAGE3).DIGESTS.asc | grep -A 1 -i sha512 | grep -v SHA | grep -v .CONTENTS | grep "stage3" | cut -d ' ' -f 1)
+	STAGE3_SHA512SUM := $(shell sha512sum $(GENTOO)/$(CURRENT_STAGE3) | cut -d ' ' -f 1)
+	[ $(STAGE3_SHA512SUM) == $(SHA512SUM_VERIFIED) ]
+
+.PHONY: extract-stage3
+extract-stage3: $(CURRENT_STAGE3)
+	tar -xpf $(GENTOO)/$(CURRENT_STAGE3) --xattrs-include='*.*' --numeric-owner -C $(GENTOO_CHROOT)
 
 #############################################################################################################
 #############################################################################################################
 
 .PHONY: other
 other:
-	# Mount default/minimal filesystems.
-	-[ -d $(GENTOO_CHROOT) ] || mkdir -pv $(GENTOO_CHROOT)
-	mount $(DEVICE)p3 $(GENTOO_CHROOT)
-
-	# Get latest stage3 tarball.
-	wget --https-only $(STAGE3_URL) -P /tmp
-	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3) -P $(GENTOO)
-	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).CONTENTS.gz -P $(GENTOO)	
-	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS -P $(GENTOO)
-	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS.asc -P $(GENTOO)
-
-	# Gentoo stage3 tarball:
-	STAGE3_URL := https://mirrors.kernel.org/gentoo/releases/amd64/autobuilds/current-stage3-amd64/
-	CURRENT_STAGE3 := $(shell cat /tmp/index.html | grep stage3- | grep amd64 | grep .tar | cut -d '"' -f 2 | head -n 1)
-
-	# Verify stage3 tarball sha512sum.
-	SHA512SUM_VERIFIED := \
-	  $(shell cat $(GENTOO)/$(CURRENT_STAGE3).DIGESTS.asc | grep -A 1 -i sha512 | grep -v SHA | grep -v .CONTENTS | grep "stage3" | cut -d ' ' -f 1)
-	STAGE3_SHA512SUM := $(shell sha512sum $(GENTOO)/$(CURRENT_STAGE3) | cut -d ' ' -f 1)
-
-	[ $(STAGE3_SHA512SUM) == $(SHA512SUM_VERIFIED) ]
-
-	tar -xpf $(GENTOO)/$(CURRENT_STAGE3) --xattrs-include='*.*' --numeric-owner -C $(GENTOO_CHROOT)
-
 	# Default/minimal portage configuration.
 	sed -i 's/COMMON_FLAGS="-O2 -pipe"/COMMON_FLAGS="-march=$(ARCH) -O2 -pipe"/g' \
 		$(GENTOO_CHROOT)/etc/portage/make.conf
@@ -179,7 +172,9 @@ gentoo: $(GENTOO_CHROOT)
 # (Useful for failed or infinished builds.)
 .PHONY: clean
 clean:
-	losetup -d $(DEVICE)
+	umount -R $(GENTOO) | losetup -d $(DEVICE)
 	rm $(GENTOO_IMAGE)
-
+	rmdir $(GENTOO)
+	[ -f /tmp/index.html ] && rm /tmp/index.html
+	
 ########################################################################

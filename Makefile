@@ -47,7 +47,7 @@ install-deps-deb:
 ## Host chroot build operations:
 #######################################################################################
 
-chroot: block_device uefi_partition uefi_fs uefi_mount stage3 portage kernelfs
+chroot: block_device uefi_partition uefi_fs uefi_mount stage3 portage kernelfs gentoo
 
 DEVICE := $$(losetup -j $(GENTOO_IMAGE) | cut -d ':' -f 1)
 COUNT := $$(( $(BS) * $(GENTOO_SIZE) * $(BS) ))

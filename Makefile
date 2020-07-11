@@ -22,11 +22,13 @@ install-deps-deb:
 	apt install -y $(DEPS)
 
 #######################################################################################
-## Host build chroot setup operations:
+## Host chroot ENVIRONMENT
 #######################################################################################
 
 GENTOO ?= /mnt/gentoo
 GENTOO_IMAGE ?= /tmp/gentoo.img
+KEEP ?= $(HOME)
+
 
 # Define size (in GB) of virtual block device image:
 GENTOO_SIZE ?= 8
@@ -45,12 +47,13 @@ M2 ?= https://gentoo.ussg.indiana.edu/
 M3 ?= https://mirrors.rit.edu/gentoo/
 M4 ?= https://mirror.sjc02.svwh.net/gentoo/
 
-#############################################################################################################
-#############################################################################################################
+#######################################################################################
+## Host chroot build
+#######################################################################################
 
 chroot: block_device uefi_partition uefi_fs uefi_mount stage3 portage kernelfs
 
-#############################################################################################################
+#######################################################################################
 
 DEVICE := $$(losetup -j $(GENTOO_IMAGE) | cut -d ':' -f 1)
 COUNT := $$(( $(BS) * $(GENTOO_SIZE) * $(BS) ))
@@ -123,21 +126,22 @@ stage3:
 	mv -v $(GENTOO)/$(CURRENT_STAGE3).DIGESTS $(GENTOO)/root
 	mv -v $(GENTOO)/$(CURRENT_STAGE3).DIGESTS.asc $(GENTOO)/root
 
+# Default minimal portage configuration.
 .PHONY: portage
 portage: $(GENTOO_IMAGE)
-	# Default/minimal portage configuration.
 	sed -i 's/COMMON_FLAGS="-O2 -pipe"/COMMON_FLAGS="-march=$(ARCH) -O2 -pipe"/g' \
 		$(GENTOO)/etc/portage/make.conf
-	echo "MAKEOPTS=$(MAKEOPTS)" >> $(GENTOO)/etc/portage/make.conf
-	echo GENTOO_MIRRORS="\"$(M0) $(M1) $(M2) $(M3) $(M4)\"" >> \
+	echo -e "\n# Other"
+	echo -e "MAKEOPTS=\"$(MAKEOPTS)\"" >> $(GENTOO)/etc/portage/make.conf
+	echo -e GENTOO_MIRRORS="\"$(M0) $(M1) $(M2) $(M3) $(M4)\"" >> \
 		$(GENTOO)/etc/portage/make.conf
 	mkdir -p $(GENTOO)/etc/portage/repos.conf
 	cp $(GENTOO)/usr/share/portage/config/repos.conf \
 		$(GENTOO)/etc/portage/repos.conf/gentoo.conf
 
+# Prepare kernel fs for chroot.
 .PHONY: kernelfs
 kernelfs: $(GENTOO_IMAGE)
-	# Prepare kernel fs for chroot.
 	cp --dereference /etc/resolv.conf $(GENTOO)/etc
 	mount --types proc /proc $(GENTOO)/proc
 	mount --rbind /sys $(GENTOO)/sys
@@ -151,24 +155,34 @@ kernelfs: $(GENTOO_IMAGE)
 ########################################################################
 # Chroot build operations:
 ########################################################################
+
 .PHONY: gentoo
-gentoo: $(GENTOO_IMAGE)
-	-[ $(GENTOO)/Makefile ] || cp $(CURRDIR)/Makefile $(GENTOO)
-	chroot $(GENTOO_CHROOT) /bin/bash -- make def-profile
-	$(shell source /etc/profile) \
-		mount $(DEVICE)p1 /boot \
-		emerge-webrsync \
-		eselect profile set $(PROFILE_CORE) \
-		emerge --ask --verbose --update --deep --newuse @world \
-		echo "$(TIMEZONE)" > /etc/timezone \
-		emerge --config sys-libs/timezone-data \
-		sed -i 's/#en_US\ ISO-8859-1/en_US\ ISO-8859-1/g' /etc/locale.gen \
-		sed -i 's/en_US.UTF-8\ UTF-8/en_US.UTF-8\ UTF-8/g' /etc/locale.gen \
-		locale-gen
+gentoo:
+	-[ -f $(GENTOO)/Makefile ] || cp $(CURRDIR)/Makefile $(GENTOO)
+	chroot $(GENTOO) make profile
+
+# Setup minimal gentoo profile
+.PHONY: profile
+profile:
+	$(shell source /etc/profile)
+	mount $(DEVICE)p1 /boot
+	emerge-webrsync
+	eselect profile set $(PROFILE_CORE)
+	emerge --update --verbose --deep --newuse @world
+	echo "$(TIMEZONE)" > /etc/timezone
+	emerge --config sys-libs/timezone-data
+	sed -i 's/#en_US\ ISO-8859-1/en_US\ ISO-8859-1/g' /etc/locale.gen
+	sed -i 's/en_US.UTF-8\ UTF-8/en_US.UTF-8\ UTF-8/g' /etc/locale.gen
+	locale-gen
 
 ########################################################################
 ## Other useful operations:
 ########################################################################
+
+# Keep block device image
+.PHONY: keep
+keep: $(GENTOO_IMAGE)
+	mv -v $(GENTOO_IMAGE) $(KEEP)
 
 # Cleanup build.
 # (Useful for failed or infinished builds.)

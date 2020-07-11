@@ -109,14 +109,14 @@ STAGE3_SHA512SUM := $$(sha512sum $(GENTOO)/$(CURRENT_STAGE3) | cut -d ' ' -f 1)
 # Gentoo stage3 tarball:
 stage3:
 	# Get latest stage3 tarball.
-	#wget --https-only $(STAGE3_URL) -P /tmp
-	#wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3) -P $(GENTOO)
-	#wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).CONTENTS.gz -P $(GENTOO)
-	#wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS -P $(GENTOO)
-	#wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS.asc -P $(GENTOO)
+	wget --https-only $(STAGE3_URL) -P /tmp
+	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3) -P $(GENTOO)
+	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).CONTENTS.gz -P $(GENTOO)
+	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS -P $(GENTOO)
+	wget --https-only $(STAGE3_URL)/$(CURRENT_STAGE3).DIGESTS.asc -P $(GENTOO)
 	# Verify stage3 sha512sum.
-	#[ $(STAGE3_SHA512SUM) == $(SHA512SUM_VERIFIED) ] && \
-		#tar -xpvf $(GENTOO)/$(CURRENT_STAGE3) --xattrs-include='*.*' --numeric-owner -C $(GENTOO)
+	[ $(STAGE3_SHA512SUM) == $(SHA512SUM_VERIFIED) ] && \
+		tar -xpvf $(GENTOO)/$(CURRENT_STAGE3) --xattrs-include='*.*' --numeric-owner -C $(GENTOO)
 	# Cleanup/store stage3
 	mv -v $(GENTOO)/$(CURRENT_STAGE3) $(GENTOO)/root
 	mv -v $(GENTOO)/$(CURRENT_STAGE3).CONTENTS.gz $(GENTOO)/root
@@ -144,7 +144,7 @@ kernelfs: $(GENTOO_IMAGE)
 	mount --make-rslave $(GENTOO)/sys
 	mount --rbind /dev $(GENTOO)/dev
 	mount --make-rslave $(GENTOO)/dev
-	test -L /dev/shm && rm /dev/shm && mkdir /dev/shm
+	-[ -L /dev/shm ] && { rm /dev/shm && mkdir /dev/shm ;}
 	mount --types tmpfs --options nosuid,nodev,noexec shm /dev/shm
 	chmod 1777 /dev/shm
 

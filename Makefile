@@ -13,7 +13,6 @@ GENTOO_IMAGE ?= /tmp/gentoo.img
 
 KEEP ?= $(HOME)
 
-
 # Define size (in GB) of virtual block device image:
 GENTOO_SIZE ?= 8
 BS := 1024
@@ -23,6 +22,9 @@ TIMEZONE ?= America/New_York
 
 # Desktop profiles
 PROFILE_CORE := default/linux/amd64/17.1
+PROFILE_CORE_SYSTEMD := $(PROFILE_CORE)/systemd
+
+PROFILE ?= $(PROFILE_CORE_SYSTEMD)
 
 # Mirrors
 M0 ?= https://gentoo.osuosl.org/
@@ -161,7 +163,7 @@ profile:
 	$(shell source /etc/profile)
 	mount $(DEVICE)p1 /boot
 	emerge-webrsync
-	eselect profile set $(PROFILE_CORE)
+	eselect profile set $(PROFILE)
 	emerge --update --verbose --deep --newuse @world
 	echo "$(TIMEZONE)" > /etc/timezone
 	emerge --config sys-libs/timezone-data

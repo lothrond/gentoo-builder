@@ -2,31 +2,15 @@
 SHELL := /bin/bash
 CURRDIR := $(shell pwd)
 ########################################################################
-## BEGIN GENTOO DEFAULT ENVIRONMENT:
+## Gentoo ENVIRONMENT:
 ########################################################################
 
 ARCH ?= native
 MAKEOPTS ?= "-j 2"
 
-########################################################################
-## END GENTOO DEFAULT ENVIRONMENT.
-########################################################################
-
-## Install dependencies:
-# (Must be done manually BEFORE build to ensure dependencies).
-DEPS:= parted wget tar dosfstools
-
-# Debian/Ubuntu:
-.PHONY: install-deps-deb
-install-deps-deb:
-	apt install -y $(DEPS)
-
-#######################################################################################
-## Host chroot ENVIRONMENT
-#######################################################################################
-
 GENTOO ?= /mnt/gentoo
 GENTOO_IMAGE ?= /tmp/gentoo.img
+
 KEEP ?= $(HOME)
 
 
@@ -47,13 +31,23 @@ M2 ?= https://gentoo.ussg.indiana.edu/
 M3 ?= https://mirrors.rit.edu/gentoo/
 M4 ?= https://mirror.sjc02.svwh.net/gentoo/
 
+########################################################################
+## Dependencies:
+########################################################################
+# (Must be done manually BEFORE build to ensure dependencies).
+
+DEPS:= parted wget tar dosfstools
+
+# Debian/Ubuntu:
+.PHONY: install-deps-deb
+install-deps-deb:
+	apt install -y $(DEPS)
+
 #######################################################################################
-## Host chroot build
+## Host chroot build operations:
 #######################################################################################
 
 chroot: block_device uefi_partition uefi_fs uefi_mount stage3 portage kernelfs
-
-#######################################################################################
 
 DEVICE := $$(losetup -j $(GENTOO_IMAGE) | cut -d ':' -f 1)
 COUNT := $$(( $(BS) * $(GENTOO_SIZE) * $(BS) ))
@@ -153,7 +147,7 @@ kernelfs: $(GENTOO_IMAGE)
 	chmod 1777 /dev/shm
 
 ########################################################################
-# Chroot build operations:
+# Chroot gentoo build operations:
 ########################################################################
 
 .PHONY: gentoo

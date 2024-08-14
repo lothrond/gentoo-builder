@@ -77,7 +77,7 @@ uefi_fs: $(GENTOO_IMAGE)
 	mkfs.ext4 $(DEVICE)p2
 
 .PHONY: mbr_partition
-default_partition_mbr: $(GENTOO_IMAGE)
+mbr_partition: $(GENTOO_IMAGE)
 	wipefs -af $(DEVICE)
 	parted -a optimal $(DEVICE) -- mklabel msdos \
 		mkpart primary ext2 2 202 \
